@@ -1,0 +1,83 @@
+const commando = require('discord.js-commando')
+const { TexasHoldEmPokerGameType, Player, PokerScoreService, Hand} = require('typedeck')
+const deck = new TexasHoldEmPokerGameType().createDeck()
+const handScorer = new PokerScoreService()
+var communityCards = new Hand()
+
+class startTexasHoldEmCommand extends commando.Command{
+    constructor(client){
+        super(client, {
+            name: 'sthe',
+            group: 'poker',
+            memberName: 'sthe',
+            description: '(S)tart (T)exas (H)old (E)m',
+        })
+    }
+
+    async run(message, args){
+        message.reply("Open the game!")
+        var dealer = 0;
+        var players = []
+        this.createPlayersFromVC(message, players)
+        this.dealCards(message, players)
+        message.reply("What would you like to do: " + players[dealer] + "?")
+        //fold, check, call, bet, or raise?
+
+        //loop through all players for actions starting from the current dealer/small blind?
+        //todo fix loop so that the first person who has an action changes each hand
+        //todo test loop with multiple people
+        //todo add action to check hand and community cards
+        //todo find a way to refactor and get this code into a method
+        var responses = []
+        for(var i = dealer; i < players.length; i ++) {
+            var response = await message.channel.awaitMessages(msg => {
+                //console.log(msg.author.username)
+                var args = msg.content.split(" ")
+                var actions = ["fold", "check", "call", "bet", "raise"]
+                //also check here to see if the message writer is the current player
+                if (actions.includes(args[0].toLowerCase())) {
+                    return msg.content
+                } else {
+                    /* Leaving this out for now until we sort out not having the bots messages loop
+                    message.reply("Please input a valid action. (Fold, check, call, bet, raise. For bet and raise, enter" +
+                        "an amount after a space.")
+                        */
+                }
+            }, {max: 1})
+            responses.push(response)
+        }
+        
+        console.log("Done with the await input: " )
+    }
+
+    createPlayersFromVC(message, players){
+        if(message.member.voiceChannel === undefined){
+            message.reply("Get everyone into the voicechat (including yourself) before starting a game of Texas Hold" +
+                "em.")
+        } else {
+            var vc = message.member.voiceChannel
+            console.log(vc)
+            console.log("Obtaining members of VC to create player objects")
+            //console.log(vc.members)
+            vc.members.forEach((member) => {
+                console.log(member.user.username)
+                var player = new Player(member.user.username)
+                players.push(player)
+            })
+            console.log(players)
+        }
+    }
+
+    dealCards(message, players){
+        players.forEach((player) => {
+            deck.deal(player.getHand(), 2)
+            message.reply(player.name + " has these cards: " + player.getHand().getCards())
+        });
+    }
+
+
+}
+
+
+
+module.exports = startTexasHoldEmCommand
