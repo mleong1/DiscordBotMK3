@@ -25,10 +25,11 @@ class startTexasHoldEmCommand extends commando.Command{
 
         //loop through all players for actions starting from the current dealer/small blind?
         //todo fix loop so that the first person who has an action changes each hand
-        //todo test loop with multiple people
         //todo add action to check hand and community cards
         //todo find a way to refactor and get this code into a method
         //todo reset the deck after a game
+        //todo handle all in bet
+        //todo deal with cards that are removed when dealing the rest of the community cards, bottom of deck?
         var responses = []
         //console.log("Player number: " + players.length)
         for(var i = dealer; i < players.length; i ++) {
@@ -59,6 +60,7 @@ class startTexasHoldEmCommand extends commando.Command{
 
         console.log(this.determineWinner(message, players, communityCards, handScorer))
 
+        this.cleanupCards(players, communityCards)
 
     }
 
@@ -110,6 +112,18 @@ class startTexasHoldEmCommand extends commando.Command{
 
     }
 
+    cleanupCards(players, communityCards = []){
+        //shuffle in player cards back to the deck
+        players.forEach((player) => {
+            deck.addCards(player.getHand().getCards())
+            player.getHand().takeCards(0)
+            console.log("Cards in " + player.name + "'s hand: " + player.getHand().getCards())
+        })
+        //shuffle community cards back to the deck
+        deck.addCards(communityCards.getCards())
+        communityCards.takeCards(0)
+        console.log("Deck count after cleanup: " + deck.getCount())
+    }
 
 }
 
