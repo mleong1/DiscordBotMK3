@@ -25,7 +25,6 @@ class PokerPlayer extends Player {
 
     takeChips(num){
         this.chips -= num
-        return this
     }
 
     isFolded(){
@@ -70,7 +69,9 @@ class ActionHandlerService{
                 return true
             }
         } else if (args[0] === "raise"){
-            if(isNaN(args[1]) || (args[1] + this.highestBet) > pokerPlayer.getChips() || this.canRaise === false){
+            //raise has to be at least the
+            if(isNaN(args[1]) || (args[1] + this.highestBet) > pokerPlayer.getChips() || this.canRaise === false ||
+                args[1] < this.highestBet){
                 return false
             } else {
                 this.canRaise = false
@@ -95,8 +96,34 @@ class ActionHandlerService{
         }
     }
 
+    executeAction(verifiedResponse, pokerPlayer) {
+        verifiedResponse = verifiedResponse.toLowerCase()
+        var args = verifiedResponse.split(" ")
+        var betMoney = parseInt(args[1])
+
+        console.log("Inside execute action: " + args[0])
+        if (args[0] === "fold") {
+            pokerPlayer.folded = true
+        } else if (args[0] === "bet") {
+            console.log("I am at the betting stage")
+            pokerPlayer.takeChips(betMoney)
+            pokerPlayer.setLastBet(betMoney)
+            this.pot += betMoney
+            this.highestBet = betMoney
+        } else if (args[0] === "raise") {
+            pokerPlayer.takeChips(betMoney + this.highestBet)
+            pokerPlayer.setLastBet(betMoney + this.highestBet)
+            this.pot += betMoney
+            this.highestBet = betMoney
+        } else if (args[0] === "call") {
+            pokerPlayer.takeChips(this.highestBet - pokerPlayer.lastBet)
+            pokerPlayer.setLastBet(this.highestBet)
+            this.pot += this.highestBet - pokerPlayer.lastBet
+        }
+    }
 
 }
+
 class startTexasHoldEmCommand extends commando.Command{
     constructor(client){
         super(client, {
@@ -109,69 +136,28 @@ class startTexasHoldEmCommand extends commando.Command{
 
     async run(message, args){
         message.reply("Open the game!")
-        var dealer = 0;
-        var players = []
+        let dealer = 0;
+        let players = []
         if(this.createPlayersFromVC(message, players)) {
-            var actionHandler = new ActionHandlerService(players)
+            let actionHandler = new ActionHandlerService(players)
             this.dealCards(message, players)
-            //fold, check, call, bet, or raise?
 
+            //fold, check, call, bet, or raise?
             //loop through all players for actions starting from the current dealer/small blind?
+
             //todo fix loop so that the first person who has an action changes each hand
             //todo add action to check hand and community cards
-            //todo find a way to refactor and get this code into a method
-            //todo reset the deck after a game
             //todo handle all in bet
             //todo deal with cards that are removed when dealing the rest of the community cards, bottom of deck
+            //todo need to handle round 2 if someone raises
 
-            //console.log("Player number: " + players.length)
-            for (var i = dealer; i < players.length; i++) {
-                message.channel.send("What would you like to do: " + players[dealer] + "?")
-                console.log("Current iteration of the player loop: " + i)
-                var response = await message.channel.awaitMessages(msg => {
 
-                    /*
-                    //console.log(msg.author.username)
-                    var args = msg.content.split(" ")
-                    var actions1 = ["fold", "check", "call"]
-                    var actions2 = ["bet", "raise"]
-                    //also check here to see if the message writer is the current player
-                    console.log(!isNaN(args[1]) + " " + args[1] + " Money is getting retunred")
-                    if (actions1.includes(args[0].toLowerCase())) {
-                        return msg.content
-                    } else if (actions2.includes(args[0].toLowerCase()) && !isNaN(args[1])){
-                        return msg.content
-                    } else {
-                        //Leaving this out for now until we sort out not having the bots messages loop
-                        //message.reply("Please input a valid action. (Fold, check, call, bet, raise. For bet and raise, enter" +
-                            //"an amount after a space.")
-
-                    }
-                    */
-                    //todo this match may not be the best way to handle things. May need to use the specific user ID
-                    if(msg.author.username === players[dealer].name) {
-                        var strMsg = "" + msg + ""
-                        console.log("action: " + actionHandler.validateAction(strMsg, players[dealer]))
-                        if (actionHandler.validateAction(strMsg, players[dealer])) {
-                            console.log("got here: " + players[dealer].name)
-                            return msg.content
-                        } else {
-                            //Leaving this out for now until we sort out not having the bots messages loop
-                            //message.reply("Please input a valid action. (Fold, check, call, bet, raise. For bet and raise, enter" +
-                            //"an amount after a space.")
-                        }
-                    }
-
-                }, {max: 1})
-                /*
-                console.log("getting here")
-                var readableResponse = "" + response.entries().next().value + ""
-                console.log("Here's the response: " + response.entries().next().value)
-                readableResponse = readableResponse.substring(readableResponse.indexOf(",") + 1)
-                //feed readable response into bet handler
-                console.log(readableResponse)
-                */
+            for(let i = dealer; i < players.length; i ++) {
+                message.channel.send("What would you like to do: " + players[i] + "? :spades:");
+                await this.getPlayerInput(message, players, i, actionHandler)
             }
+            await this.handleRaise(message, players, dealer, actionHandler)
+            //console.log("Player number: " + players.length)
 
             console.log("Done with the await input: ")
 
@@ -179,7 +165,9 @@ class startTexasHoldEmCommand extends commando.Command{
 
             console.log("Community Cards dealt")
 
-            console.log(this.determineWinner(message, players, communityCards, handScorer))
+            var winner = this.determineWinner(message, players, communityCards, handScorer)
+            winner.addChips(actionHandler.pot)
+            console.log(winner.getChips())
 
             this.cleanupCards(players, communityCards)
         }
@@ -222,16 +210,18 @@ class startTexasHoldEmCommand extends commando.Command{
     }
 
     determineWinner(message, players, communityCards = [], handScorer) {
-        var winner = players[0].name
+        var winner = players[0]
         var highestScoringPlayerHand = 0
         players.forEach((player) => {
-            var handValue = handScorer.scoreHand(player.hand, communityCards.getCards()).value
-            if(handValue > highestScoringPlayerHand){
-                winner = player.name
-                highestScoringPlayerHand = handValue
+            if(!player.isFolded()) {
+                var handValue = handScorer.scoreHand(player.hand, communityCards.getCards()).value
+                if (handValue > highestScoringPlayerHand) {
+                    winner = player
+                    highestScoringPlayerHand = handValue
+                }
             }
         });
-        message.channel.send("The winner is: " + winner)
+        message.channel.send("The winner is: " + winner.name)
         return winner
 
     }
@@ -251,6 +241,52 @@ class startTexasHoldEmCommand extends commando.Command{
 
     cleanupPlayers(){
         //todo reset folded flags, last bet status
+    }
+
+    /*
+        Gets a player's action input for a round. Player is selected by i parameter.
+     */
+    async getPlayerInput(message, players, i, actionHandler){
+        console.log("Current iteration of the player loop: " + players[i]);
+        //awaitMessages has to resolve as a collection of messages which is why they are processed after the await
+        let response = await message.channel.awaitMessages(msg => {
+            //todo this match may not be the best way to handle things. May need to use the specific user ID
+            //going to leave it as matching via name for now but could extend player object to include discord ID to match off of
+            if(msg.author.username === players[i].name) {
+                let strMsg = "" + msg + "";
+                console.log("action: " + actionHandler.validateAction(strMsg, players[i]));
+                if (actionHandler.validateAction(strMsg, players[i])) {
+                    console.log("got here: " + players[i].name);
+                    return strMsg;
+                } else {
+                    message.channel.send("That is not an accurate command. Use this command to have rules DM'd " +
+                        "to you.");
+                }
+            }
+        }, {max: 1})
+
+        let strResponse = "" + response.entries().next().value + ""
+        console.log("Here's the response: " + response.entries().next().value)
+        let finalResponse = strResponse.substring(strResponse.indexOf(",") + 1)
+        actionHandler.executeAction(finalResponse, players[i])
+        console.log("Logging player's money and last bet information for: " + players[i].name)
+        console.log(players[i].getChips())
+        console.log(players[i].getLastBet())
+        console.log(actionHandler.pot)
+    }
+
+    /*
+        If a player did not bet the current highest bet, prompts that player for a call to the raise or fold.
+     */
+    async handleRaise(message, players, rightOfTheDealer, actionHandler){
+        let highestBet = actionHandler.highestBet;
+        for(let i = rightOfTheDealer; i < players.length; i ++){
+            if(players[i].getLastBet() < highestBet){
+                message.channel.send(players[i] + ", you need to call or fold to stay in the game. What will it be?")
+                //kind of a hacky solution, but only call or fold will work at this point by design
+                await this.getPlayerInput(message, players, rightOfTheDealer, actionHandler)
+            }
+        }
     }
 
 }
