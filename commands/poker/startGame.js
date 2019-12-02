@@ -122,6 +122,11 @@ class ActionHandlerService{
         }
     }
 
+    bettingRoundReset(){
+        this.highestBet = 0
+        this.raise = true
+    }
+
 }
 
 class startTexasHoldEmCommand extends commando.Command{
@@ -150,20 +155,48 @@ class startTexasHoldEmCommand extends commando.Command{
             //todo handle all in bet
             //todo deal with cards that are removed when dealing the rest of the community cards, bottom of deck
             //todo need to handle round 2 if someone raises
+            //todo refactor betting after testing
 
 
+            //betting round 1
             for(let i = dealer; i < players.length; i ++) {
                 message.channel.send("What would you like to do: " + players[i] + "? :spades:");
                 await this.getPlayerInput(message, players, i, actionHandler)
             }
             await this.handleRaise(message, players, dealer, actionHandler)
+            actionHandler.bettingRoundReset()
             //console.log("Player number: " + players.length)
 
             console.log("Done with the await input: ")
 
+            message.channel.send("Dealing the flop: ")
             this.dealCommunityCards(message, communityCards, 3)
+            console.log("Flop dealt")
 
-            console.log("Community Cards dealt")
+            //betting round 2
+            for(let i = dealer; i < players.length; i ++) {
+                message.channel.send("What would you like to do: " + players[i] + "? :spades:");
+                await this.getPlayerInput(message, players, i, actionHandler)
+            }
+            await this.handleRaise(message, players, dealer, actionHandler)
+            actionHandler.bettingRoundReset()
+
+            //todo burn a card for the turn and the river? Mathematical significance?
+            message.channel.send("Dealing the turn: ")
+            this.dealCommunityCards(message, communityCards, 1)
+            console.log("Turn dealt")
+
+            //betting round 3
+            for(let i = dealer; i < players.length; i ++) {
+                message.channel.send("What would you like to do: " + players[i] + "? :spades:");
+                await this.getPlayerInput(message, players, i, actionHandler)
+            }
+            await this.handleRaise(message, players, dealer, actionHandler)
+            actionHandler.bettingRoundReset()
+
+            message.channel.send("Dealing the river: ")
+            this.dealCommunityCards(message, communityCards, 1)
+            console.log("River dealt")
 
             var winner = this.determineWinner(message, players, communityCards, handScorer)
             winner.addChips(actionHandler.pot)
